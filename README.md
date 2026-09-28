@@ -4,16 +4,14 @@ A macOS menu bar app that shows your open pull requests, grouped by what each
 one is waiting on: ready to merge, changes requested, conflicting, CI failing,
 CI running, or waiting on review.
 
-It polls on an interval and puts a dot on the menu bar icon when a PR changes
-state, appears, or is merged/closed since you last looked.
+It queries GitHub on an interval and puts a dot on the menu bar icon when a PR
+changes state, appears, or is merged/closed since you last looked.
 
 ## Requirements
 
 - macOS 14+ on Apple Silicon
-- Xcode command line tools (`xcode-select --install`)
 - [`gh`](https://cli.github.com), authenticated (`gh auth login`)
-- Node.js
-- The [`my-prs`](https://github.com/designfrontier/dots/blob/master/bin/my-prs) script, by default at `~/dots/bin/my-prs`
+- To build from source: Xcode command line tools (`xcode-select --install`)
 
 ## Install
 
@@ -22,14 +20,8 @@ state, appears, or is merged/closed since you last looked.
 open ~/Applications/MyPRs.app
 ```
 
-The build records your current shell `PATH` so the app can find `node` and
-`gh`. Rebuild if either moves (e.g. switching Node versions with nvm).
-
-To use a script somewhere else:
-
-```sh
-MY_PRS_SCRIPT=/path/to/my-prs ./build.sh install
-```
+The app uses `gh`'s existing login (`gh auth token`), so there is no separate
+sign-in. It looks for `gh` in `/opt/homebrew/bin`, `/usr/local/bin` and `/usr/bin`.
 
 ## Use
 
@@ -47,6 +39,8 @@ Click the icon in the menu bar to open the list. Click a PR to open it on GitHub
 | Author         | `@me`     | Any GitHub login                       |
 | Include drafts | off       |                                        |
 | Poll every     | 5 min     | 1–60                                   |
+
+See [DISTRIBUTION.md](DISTRIBUTION.md) for ways to ship it to other people.
 
 ## Development
 

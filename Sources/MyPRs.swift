@@ -1,46 +1,6 @@
 import AppKit
 import SwiftUI
 
-struct Review: Decodable, Hashable, Sendable {
-  let login: String
-  let state: String
-}
-
-struct PR: Decodable, Identifiable, Hashable, Sendable {
-  struct Repo: Decodable, Hashable, Sendable { let nameWithOwner: String }
-  struct Count: Decodable, Hashable, Sendable { let totalCount: Int }
-
-  let number: Int
-  let title: String
-  let url: String
-  let isDraft: Bool
-  let updatedAt: String
-  let additions: Int
-  let deletions: Int
-  let bucket: String
-  let requested: [String]
-  let reviews: [Review]
-  let unassigned: Bool
-  let conflicting: Bool
-  let failing: Bool
-  let ageDays: Int
-  let idleDays: Int
-  let repository: Repo
-  let comments: Count
-
-  var id: String { url }
-  var org: String { String(repository.nameWithOwner.split(separator: "/").first ?? "") }
-  var repo: String { String(repository.nameWithOwner.split(separator: "/").last ?? "") }
-
-  var who: String {
-    if !requested.isEmpty { return "\(requested.joined(separator: ", ")) pending" }
-    if reviews.isEmpty { return "nobody" }
-    return reviews
-      .map { "\($0.login) \($0.state.lowercased().replacingOccurrences(of: "_", with: " "))" }
-      .joined(separator: ", ")
-  }
-}
-
 struct Section: Identifiable {
   let key: String
   let label: String
@@ -78,48 +38,6 @@ struct Settings: Equatable, Sendable {
 
 func parseOrgs(_ raw: String) -> [String] {
   raw.split(whereSeparator: { $0 == "," || $0.isWhitespace }).map(String.init)
-}
-
-enum Runner {
-  static var info: [String: Any] { Bundle.main.infoDictionary ?? [:] }
-  static let script = info["MyPRsScript"] as? String
-    ?? NSString(string: "~/dots/bin/my-prs").expandingTildeInPath
-
-  // GUI apps get a bare PATH, so the build bakes in the shell's PATH to find node and gh.
-  static let environment: [String: String] = {
-    var env = ProcessInfo.processInfo.environment
-    if let path = info["MyPRsPath"] as? String { env["PATH"] = path }
-    return env
-  }()
-
-  static func fetch(org: String, author: String, drafts: Bool) async throws -> [PR] {
-    let args = ["--json", "--org", org, "--author", author] + (drafts ? ["--drafts"] : [])
-    let data = try await run(args)
-    return try JSONDecoder().decode([PR].self, from: data)
-  }
-
-  static func run(_ args: [String]) async throws -> Data {
-    try await Task.detached {
-      let process = Process()
-      let out = Pipe()
-      let err = Pipe()
-      process.executableURL = URL(fileURLWithPath: script)
-      process.arguments = args
-      process.environment = environment
-      process.standardOutput = out
-      process.standardError = err
-      try process.run()
-      let data = out.fileHandleForReading.readDataToEndOfFile()
-      let errData = err.fileHandleForReading.readDataToEndOfFile()
-      process.waitUntilExit()
-      guard process.terminationStatus == 0 else {
-        let message = String(decoding: errData, as: UTF8.self)
-        throw NSError(domain: "my-prs", code: Int(process.terminationStatus),
-                      userInfo: [NSLocalizedDescriptionKey: message.trimmingCharacters(in: .whitespacesAndNewlines)])
-      }
-      return data
-    }.value
-  }
 }
 
 @MainActor
@@ -189,7 +107,7 @@ final class Store: ObservableObject {
     defer { loading = false }
 
     let tasks = settings.orgs.map { org in
-      (org, Task.detached { try await Runner.fetch(org: org, author: settings.author, drafts: settings.drafts) })
+      (org, Task.detached { try await GitHub.fetch(org: org, author: settings.author, drafts: settings.drafts) })
     }
     var results: [(String, Result<[PR], Error>)] = []
     for (org, task) in tasks { results.append((org, await task.result)) }
@@ -217,7 +135,7 @@ struct PRRow: View {
       VStack(alignment: .leading, spacing: 3) {
         HStack(spacing: 6) {
           if isChanged { Circle().fill(.blue).frame(width: 7, height: 7).help("Changed since you last looked") }
-          Text(verbatim: "\(showOrg ? pr.repository.nameWithOwner : pr.repo) #\(pr.number)").bold()
+          Text(verbatim: "\(showOrg ? pr.nameWithOwner : pr.repo) #\(pr.number)").bold()
           if pr.isDraft { Text("draft").font(.caption).foregroundStyle(.secondary) }
           Text(pr.title).lineLimit(1).truncationMode(.tail)
         }
@@ -237,7 +155,7 @@ struct PRRow: View {
   }
 
   var meta: String {
-    let n = pr.comments.totalCount
+    let n = pr.comments
     return ([
       "+\(pr.additions)/-\(pr.deletions)",
       "\(pr.idleDays)d idle",

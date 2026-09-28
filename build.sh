@@ -4,7 +4,6 @@ set -eu
 cd "$(dirname "$0")"
 
 APP=build/MyPRs.app
-SCRIPT="${MY_PRS_SCRIPT:-$HOME/dots/bin/my-prs}"
 
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
@@ -12,7 +11,7 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp AppIcon.icns "$APP/Contents/Resources/"
 
 swiftc -parse-as-library -O -swift-version 6 -target arm64-apple-macos14 \
-  -o "$APP/Contents/MacOS/MyPRs" MyPRs.swift
+  -o "$APP/Contents/MacOS/MyPRs" Sources/*.swift
 
 cat > "$APP/Contents/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -32,8 +31,6 @@ cat > "$APP/Contents/Info.plist" <<EOF
 </plist>
 EOF
 
-plutil -replace MyPRsScript -string "$SCRIPT" "$APP/Contents/Info.plist"
-plutil -replace MyPRsPath -string "$PATH" "$APP/Contents/Info.plist"
 codesign --force --sign - "$APP"
 
 if [ "${1:-}" = install ]; then
