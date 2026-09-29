@@ -17,17 +17,33 @@ let sections = [
   Section(key: "review", label: "Green, waiting on review", color: .blue),
 ]
 
+enum Server: String, CaseIterable, Identifiable, Sendable {
+  case github, gitea, forgejo
+  var id: String { rawValue }
+  var name: String {
+    switch self {
+    case .github: "GitHub"
+    case .gitea: "Gitea"
+    case .forgejo: "Forgejo"
+    }
+  }
+}
+
 struct Settings: Equatable, Sendable {
+  var server: Server
+  var serverURL: String
   var orgs: [String]
   var author: String
   var drafts: Bool
   var pollMinutes: Int
 
-  static var defaults: [String: Any] { ["orgs": "voze-hq", "author": "@me", "drafts": false, "pollMinutes": 5] }
+  static var defaults: [String: Any] { ["server": "github", "serverURL": "", "orgs": "voze-hq", "author": "@me", "drafts": false, "pollMinutes": 5] }
 
   static var current: Settings {
     let d = UserDefaults.standard
     return Settings(
+      server: Server(rawValue: d.string(forKey: "server") ?? "") ?? .github,
+      serverURL: d.string(forKey: "serverURL") ?? "",
       orgs: parseOrgs(d.string(forKey: "orgs") ?? ""),
       author: d.string(forKey: "author") ?? "@me",
       drafts: d.bool(forKey: "drafts"),
@@ -49,14 +65,17 @@ final class Store: ObservableObject {
   @Published private(set) var settings = Settings.current
 
   private var loop: Task<Void, Never>?
-  private var observer: NSObjectProtocol?
+  private var observers: [NSObjectProtocol] = []
 
   init() {
-    observer = NotificationCenter.default.addObserver(
-      forName: UserDefaults.didChangeNotification, object: nil, queue: .main
-    ) { [weak self] _ in
-      Task { @MainActor in self?.settingsChanged() }
-    }
+    observers = [
+      NotificationCenter.default.addObserver(forName: UserDefaults.didChangeNotification, object: nil, queue: .main) {
+        [weak self] _ in Task { @MainActor in self?.settingsChanged() }
+      },
+      NotificationCenter.default.addObserver(forName: Keychain.didChange, object: nil, queue: .main) {
+        [weak self] _ in Task { @MainActor in self?.reload() }
+      },
+    ]
     restart()
   }
 
@@ -82,10 +101,12 @@ final class Store: ObservableObject {
 
   // UserDefaults also changes on window moves, so only restart when our settings differ.
   private func settingsChanged() {
-    if Settings.current != settings {
-      seen = nil
-      restart()
-    }
+    if Settings.current != settings { reload() }
+  }
+
+  private func reload() {
+    seen = nil
+    restart()
   }
 
   private func restart() {
@@ -107,7 +128,7 @@ final class Store: ObservableObject {
     defer { loading = false }
 
     let tasks = settings.orgs.map { org in
-      (org, Task.detached { try await GitHub.fetch(org: org, author: settings.author, drafts: settings.drafts) })
+      (org, Task.detached { try await fetch(org: org, settings: settings) })
     }
     var results: [(String, Result<[PR], Error>)] = []
     for (org, task) in tasks { results.append((org, await task.result)) }
@@ -122,6 +143,13 @@ final class Store: ObservableObject {
     // A failed org drops its PRs from the list, which would read as "all removed".
     if errors.isEmpty { detectChanges() }
   }
+}
+
+func fetch(org: String, settings: Settings) async throws -> [PR] {
+  settings.server == .github
+    ? try await GitHub.fetch(org: org, author: settings.author, drafts: settings.drafts)
+    : try await Gitea.fetch(
+      server: settings.server, base: settings.serverURL, owner: org, author: settings.author, drafts: settings.drafts)
 }
 
 struct PRRow: View {
@@ -255,13 +283,15 @@ struct ContentView: View {
   }
 
   var status: String {
-    let every = "every \(settings.pollMinutes)m · \(settings.orgs.joined(separator: ", "))"
+    let every = "every \(settings.pollMinutes)m · \(settings.server.name) · \(settings.orgs.joined(separator: ", "))"
     guard let last = store.lastRun else { return every }
     return "Updated \(last.formatted(date: .omitted, time: .shortened)) · \(every)"
   }
 }
 
 struct SettingsView: View {
+  @AppStorage("server") private var server = Server.github
+  @AppStorage("serverURL") private var serverURL = ""
   @AppStorage("orgs") private var orgsRaw = "voze-hq"
   @AppStorage("author") private var author = "@me"
   @AppStorage("drafts") private var drafts = false
@@ -269,15 +299,47 @@ struct SettingsView: View {
 
   var body: some View {
     Form {
-      TextField("Orgs", text: $orgsRaw, prompt: Text("voze-hq, another-org"))
+      Picker("Server", selection: $server) {
+        ForEach(Server.allCases) { Text($0.name).tag($0) }
+      }
+      if server != .github {
+        TextField("URL", text: $serverURL, prompt: Text(server == .forgejo ? "codeberg.org" : "gitea.example.com"))
+        TokenField(account: Gitea.normalize(serverURL))
+      }
+      TextField(server == .github ? "Orgs" : "Owners", text: $orgsRaw, prompt: Text("voze-hq, another-org"))
       Text("Comma or space separated.").font(.caption).foregroundStyle(.secondary)
       TextField("Author", text: $author, prompt: Text("@me"))
+      if server != .github && author != "@me" {
+        Text("Other authors are filtered locally from every open PR the token can see.")
+          .font(.caption).foregroundStyle(.secondary)
+      }
       Toggle("Include drafts", isOn: $drafts)
       Stepper("Poll every \(pollMinutes) min", value: $pollMinutes, in: 1...60)
     }
     .padding(20)
     .frame(width: 400)
   }
+}
+
+/// Access tokens live in the Keychain, keyed by server URL, rather than in UserDefaults.
+struct TokenField: View {
+  let account: String?
+  @State private var token = ""
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 4) {
+      SecureField("Token", text: $token, prompt: Text("Settings → Applications → Generate token"))
+        .disabled(account == nil)
+        .onSubmit(save)
+      Text("Needs read access to repositories and issues. Press Return to save.")
+        .font(.caption).foregroundStyle(.secondary)
+    }
+    .onAppear(perform: load)
+    .onChange(of: account) { load() }
+  }
+
+  private func load() { token = account.flatMap(Keychain.token) ?? "" }
+  private func save() { account.map { Keychain.setToken(token, for: $0) } }
 }
 
 @main

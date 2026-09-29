@@ -42,6 +42,19 @@ struct PR: Identifiable, Hashable, Sendable {
   }
 }
 
+extension PR {
+  static func bucket(approved: Bool, changesRequested: Bool, conflicting: Bool, failing: Bool, pending: Bool) -> String {
+    approved && !failing && !conflicting ? "ready"
+      : changesRequested ? "changes"
+      : conflicting ? "conflicting"
+      : failing ? "failing"
+      : pending ? "running"
+      : "review"
+  }
+
+  static func days(since date: Date) -> Int { Int(Date().timeIntervalSince(date) / 86400) }
+}
+
 struct GitHubError: LocalizedError {
   let message: String
   var errorDescription: String? { message }
@@ -96,16 +109,6 @@ enum GitHub {
     let conflicting = pr.mergeable == "CONFLICTING"
     let failing = ci == "FAILURE" || ci == "ERROR"
 
-    let bucket =
-      pr.reviewDecision == "APPROVED" && !failing && !conflicting ? "ready"
-      : pr.reviewDecision == "CHANGES_REQUESTED" ? "changes"
-      : conflicting ? "conflicting"
-      : failing ? "failing"
-      : ci == "PENDING" ? "running"
-      : "review"
-
-    let days = { (date: Date) in Int(Date().timeIntervalSince(date) / 86400) }
-
     return PR(
       number: pr.number,
       title: pr.title,
@@ -118,11 +121,17 @@ enum GitHub {
       comments: pr.comments.totalCount,
       requested: pr.reviewRequests.nodes.compactMap { $0.requestedReviewer?.login ?? $0.requestedReviewer?.name },
       reviews: pr.latestReviews.nodes.compactMap { r in r.author.map { Review(login: $0.login, state: r.state) } },
-      bucket: bucket,
+      bucket: PR.bucket(
+        approved: pr.reviewDecision == "APPROVED",
+        changesRequested: pr.reviewDecision == "CHANGES_REQUESTED",
+        conflicting: conflicting,
+        failing: failing,
+        pending: ci == "PENDING"
+      ),
       conflicting: conflicting,
       failing: failing,
-      ageDays: days(pr.createdAt),
-      idleDays: days(pr.updatedAt)
+      ageDays: PR.days(since: pr.createdAt),
+      idleDays: PR.days(since: pr.updatedAt)
     )
   }
 
