@@ -35,9 +35,10 @@ struct Settings: Equatable, Sendable {
   var orgs: [String]
   var author: String
   var drafts: Bool
+  var archived: Bool
   var pollMinutes: Int
 
-  static var defaults: [String: Any] { ["server": "github", "serverURL": "", "orgs": "voze-hq", "author": "@me", "drafts": false, "pollMinutes": 5] }
+  static var defaults: [String: Any] { ["server": "github", "serverURL": "", "orgs": "voze-hq", "author": "@me", "drafts": false, "archived": false, "pollMinutes": 5] }
 
   static var current: Settings {
     let d = UserDefaults.standard
@@ -47,6 +48,7 @@ struct Settings: Equatable, Sendable {
       orgs: parseOrgs(d.string(forKey: "orgs") ?? ""),
       author: d.string(forKey: "author") ?? "@me",
       drafts: d.bool(forKey: "drafts"),
+      archived: d.bool(forKey: "archived"),
       pollMinutes: max(1, d.integer(forKey: "pollMinutes"))
     )
   }
@@ -147,9 +149,10 @@ final class Store: ObservableObject {
 
 func fetch(org: String, settings: Settings) async throws -> [PR] {
   settings.server == .github
-    ? try await GitHub.fetch(org: org, author: settings.author, drafts: settings.drafts)
+    ? try await GitHub.fetch(org: org, author: settings.author, drafts: settings.drafts, archived: settings.archived)
     : try await Gitea.fetch(
-      server: settings.server, base: settings.serverURL, owner: org, author: settings.author, drafts: settings.drafts)
+      server: settings.server, base: settings.serverURL, owner: org, author: settings.author,
+      drafts: settings.drafts, archived: settings.archived)
 }
 
 struct PRRow: View {
@@ -295,6 +298,7 @@ struct SettingsView: View {
   @AppStorage("orgs") private var orgsRaw = "voze-hq"
   @AppStorage("author") private var author = "@me"
   @AppStorage("drafts") private var drafts = false
+  @AppStorage("archived") private var archived = false
   @AppStorage("pollMinutes") private var pollMinutes = 5
 
   var body: some View {
@@ -314,6 +318,7 @@ struct SettingsView: View {
           .font(.caption).foregroundStyle(.secondary)
       }
       Toggle("Include drafts", isOn: $drafts)
+      Toggle("Include archived repos", isOn: $archived)
       Stepper("Poll every \(pollMinutes) min", value: $pollMinutes, in: 1...60)
     }
     .padding(20)

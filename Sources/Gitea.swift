@@ -5,7 +5,9 @@ import Security
 enum Gitea {
   private static let pageSize = 50
 
-  static func fetch(server: Server, base: String, owner: String, author: String, drafts: Bool) async throws -> [PR] {
+  static func fetch(
+    server: Server, base: String, owner: String, author: String, drafts: Bool, archived: Bool
+  ) async throws -> [PR] {
     guard let account = normalize(base), let url = URL(string: account) else {
       throw GitHubError(message: "Set your \(server.name) URL in Settings.")
     }
@@ -14,8 +16,10 @@ enum Gitea {
     }
     let api = Client(server: server, base: url, token: token)
     let me = author == "@me"
-    let issues = try await search(api, owner: owner, mine: me)
+    let found = try await search(api, owner: owner, mine: me)
       .filter { me || $0.user.login.caseInsensitiveCompare(author) == .orderedSame }
+    let hidden = archived ? [] : try await archivedRepos(api, Set(found.map(\.repository.fullName)))
+    let issues = found.filter { !hidden.contains($0.repository.fullName) }
 
     let tasks = issues.map { issue in (issue, Task.detached { try await details(issue, api) }) }
     var prs: [PR] = []
@@ -37,6 +41,14 @@ enum Gitea {
         .merging(mine ? ["created": "true"] : [:]) { a, _ in a }
     )
     return batch.count < pageSize ? batch : try await batch + search(api, owner: owner, mine: mine, page: page + 1)
+  }
+
+  // Search results carry only repo names, so archived status needs a lookup per repo.
+  private static func archivedRepos(_ api: Client, _ names: Set<String>) async throws -> Set<String> {
+    let tasks = names.map { name in (name, Task.detached { try await api.get("repos/\(name)") as Repo }) }
+    var hidden: Set<String> = []
+    for (name, task) in tasks where try await task.value.archived { hidden.insert(name) }
+    return hidden
   }
 
   private static func details(_ issue: Issue, _ api: Client) async throws -> PR {
@@ -153,6 +165,7 @@ private struct RawReview: Decodable {
 }
 
 private struct Status: Decodable { let state: String }
+private struct Repo: Decodable { let archived: Bool }
 
 enum Keychain {
   static let didChange = Notification.Name("KeychainTokenDidChange")

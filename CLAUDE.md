@@ -2,7 +2,7 @@
 
 ## Project structure
 
-- `Sources/MyPRs.swift` — SwiftUI menu bar app (`LSUIElement`): `MenuBarExtra` popover with the grouped PR list, polling `Store`, change detection that badges the menu bar icon, and the Settings window (server type/URL/token, orgs, author, drafts, poll interval)
+- `Sources/MyPRs.swift` — SwiftUI menu bar app (`LSUIElement`): `MenuBarExtra` popover with the grouped PR list, polling `Store`, change detection that badges the menu bar icon, and the Settings window (server type/URL/token, orgs, author, drafts, archived repos, poll interval)
 - `Sources/Gitea.swift` — Gitea/Forgejo REST client (`/api/v1`, shared by both), per-PR detail fetches, and the Keychain token store
 - `Sources/GitHub.swift` — Swift port of `~/dots/bin/my-prs`: GraphQL search against api.github.com, bucketing, bot detection; borrows the token from `gh auth token`
 - `build.sh` — compiles `Sources/*.swift` with `swiftc -O -swift-version 6` into `build/MyPRs.app`; `./build.sh install` copies to `~/Applications`
