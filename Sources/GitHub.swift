@@ -65,9 +65,9 @@ enum GitHub {
     "claude", "cursor", "github-actions", "dependabot", "renovate", "copilot-pull-request-reviewer",
   ]
 
-  static func fetch(org: String, author: String, drafts: Bool) async throws -> [PR] {
+  static func fetch(org: String, author: String, drafts: Bool, archived: Bool) async throws -> [PR] {
     let q = (["is:pr", "is:open", "org:\(org)", "author:\(author)", "sort:updated-desc"]
-      + (drafts ? [] : ["draft:false"])).joined(separator: " ")
+      + (drafts ? [] : ["draft:false"]) + (archived ? [] : ["archived:false"])).joined(separator: " ")
     let token = try await Token.shared.get()
 
     var nodes: [RawPR] = []
