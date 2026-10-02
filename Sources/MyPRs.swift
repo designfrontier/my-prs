@@ -67,6 +67,8 @@ final class Store: ObservableObject {
   @Published private(set) var settings = Settings.current
 
   private var loop: Task<Void, Never>?
+  // Last successful result per org, kept so a failed poll doesn't blank the list.
+  private var lastGood: [String: [PR]] = [:]
   private var observers: [NSObjectProtocol] = []
 
   init() {
@@ -108,6 +110,7 @@ final class Store: ObservableObject {
 
   private func reload() {
     seen = nil
+    lastGood = [:]
     restart()
   }
 
@@ -136,13 +139,16 @@ final class Store: ObservableObject {
     for (org, task) in tasks { results.append((org, await task.result)) }
     if Task.isCancelled { return }
 
-    prs = results.flatMap { (try? $0.1.get()) ?? [] }
+    results.forEach { org, result in
+      if case .success(let orgPRs) = result { lastGood[org] = orgPRs }
+    }
+    prs = settings.orgs.flatMap { lastGood[$0] ?? [] }
     errors = results.compactMap { org, result in
       guard case .failure(let error) = result else { return nil }
       return "\(org): \(error.localizedDescription)"
     }
     lastRun = Date()
-    // A failed org drops its PRs from the list, which would read as "all removed".
+    // An org that has never fetched successfully has no PRs, which would read as "all removed".
     if errors.isEmpty { detectChanges() }
   }
 }
