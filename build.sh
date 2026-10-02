@@ -1,5 +1,5 @@
 #!/bin/sh
-# Usage: ./build.sh [install]
+# Usage: [VERSION=x.y.z] ./build.sh [install]
 set -eu
 cd "$(dirname "$0")"
 
@@ -23,7 +23,7 @@ cat > "$APP/Contents/Info.plist" <<EOF
   <key>CFBundleIdentifier</key><string>com.danielsellers.myprs</string>
   <key>CFBundleName</key><string>My PRs</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>1.0</string>
+  <key>CFBundleShortVersionString</key><string>${VERSION:-1.0}</string>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>LSUIElement</key><true/>
   <key>NSHighResolutionCapable</key><true/>
