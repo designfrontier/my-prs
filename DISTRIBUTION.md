@@ -133,9 +133,10 @@ The cask also installs `gh`. Users upgrade with `brew upgrade`.
 
 ## Auto-updates
 
-Only worth adding with option 3. [Sparkle](https://sparkle-project.org) is the
-standard framework, but it needs a Swift package or Xcode project rather than a
-bare `swiftc` build. Until then, Homebrew's `brew upgrade` handles updates.
+Settings has a built-in updater (`Sources/Updater.swift`) that installs the
+latest GitHub release's `MyPRs.zip` in place. It does no signature
+verification, so with option 3 consider [Sparkle](https://sparkle-project.org),
+which needs a Swift package or Xcode project rather than a bare `swiftc` build.
 
 ## Recommendation
 

@@ -328,6 +328,8 @@ struct SettingsView: View {
       Toggle("Include archived repos", isOn: $archived)
       Stepper("Poll every \(pollMinutes) min", value: $pollMinutes, in: 1...60)
       LaunchAtLoginToggle()
+      Divider()
+      UpdateSection()
     }
     .padding(20)
     .frame(width: 400)
