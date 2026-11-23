@@ -336,25 +336,30 @@ struct SettingsView: View {
 
 /// Reads state from SMAppService so it reflects changes made in System Settings → Login Items.
 struct LaunchAtLoginToggle: View {
-  @State private var enabled = SMAppService.mainApp.status == .enabled
+  @State private var enabled = LaunchAtLoginToggle.registered
   @State private var error: String?
+
+  private static var registered: Bool { SMAppService.mainApp.status == .enabled }
 
   var body: some View {
     VStack(alignment: .leading, spacing: 4) {
-      Toggle("Open at login", isOn: Binding(get: { enabled }, set: set))
+      Toggle("Open at login", isOn: $enabled)
       if let error { Text(error).font(.caption).foregroundStyle(.red) }
     }
-    .onAppear { enabled = SMAppService.mainApp.status == .enabled }
+    .onAppear { enabled = Self.registered }
+    .onChange(of: enabled) { apply() }
   }
 
-  private func set(_ on: Bool) {
+  // Skips when already in sync, which also covers the revert after a failed register.
+  private func apply() {
+    guard enabled != Self.registered else { return }
     do {
-      try on ? SMAppService.mainApp.register() : SMAppService.mainApp.unregister()
+      try enabled ? SMAppService.mainApp.register() : SMAppService.mainApp.unregister()
       error = nil
     } catch {
       self.error = error.localizedDescription
     }
-    enabled = SMAppService.mainApp.status == .enabled
+    enabled = Self.registered
   }
 }
 
