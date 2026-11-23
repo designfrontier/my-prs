@@ -1,4 +1,5 @@
 import AppKit
+import ServiceManagement
 import SwiftUI
 
 struct Section: Identifiable {
@@ -326,9 +327,34 @@ struct SettingsView: View {
       Toggle("Include drafts", isOn: $drafts)
       Toggle("Include archived repos", isOn: $archived)
       Stepper("Poll every \(pollMinutes) min", value: $pollMinutes, in: 1...60)
+      LaunchAtLoginToggle()
     }
     .padding(20)
     .frame(width: 400)
+  }
+}
+
+/// Reads state from SMAppService so it reflects changes made in System Settings → Login Items.
+struct LaunchAtLoginToggle: View {
+  @State private var enabled = SMAppService.mainApp.status == .enabled
+  @State private var error: String?
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 4) {
+      Toggle("Open at login", isOn: Binding(get: { enabled }, set: set))
+      if let error { Text(error).font(.caption).foregroundStyle(.red) }
+    }
+    .onAppear { enabled = SMAppService.mainApp.status == .enabled }
+  }
+
+  private func set(_ on: Bool) {
+    do {
+      try on ? SMAppService.mainApp.register() : SMAppService.mainApp.unregister()
+      error = nil
+    } catch {
+      self.error = error.localizedDescription
+    }
+    enabled = SMAppService.mainApp.status == .enabled
   }
 }
 
